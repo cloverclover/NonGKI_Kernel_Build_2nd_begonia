@@ -395,7 +395,7 @@ index 80b743c..44e5219 100644
 +		}
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  		audit_inode(nd->name, path.dentry, 0);
- 		error = vfs_open(&path, file);
+ 		error = vfs_open(&path, file, current_cred());
  		path_put(&path);
  	}
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
@@ -405,7 +405,7 @@ index 80b743c..44e5219 100644
  	return error;
  }
  
-@@ -3675,6 +3675,11 @@ static struct file *path_openat(struct nameidata *nd,
+ static struct file *path_openat(struct nameidata *nd,
  			const struct open_flags *op, unsigned flags)
  {
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
@@ -415,7 +415,6 @@ index 80b743c..44e5219 100644
  	const char *s;
  	struct file *file;
  	int opened = 0;
-
 @@ -3690,12 +3904,43 @@ static struct file *path_openat(struct nameidata *nd,
  			break;
  		}
@@ -1035,12 +1034,6 @@ index 403cbb1..270e418 100644
 @@ -4,8 +4,20 @@
  #include <linux/proc_fs.h>
  #include <linux/seq_file.h>
- #include <linux/slab.h>
- #include <asm/setup.h>
-
- #ifdef CONFIG_PROC_BEGONIA_CMDLINE
- static char patched_cmdline[COMMAND_LINE_SIZE];
- #endif
  
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
@@ -1056,12 +1049,8 @@ index 403cbb1..270e418 100644
 +		return 0;
 +	}
 +#endif
- #ifndef CONFIG_PROC_BEGONIA_CMDLINE
-	 seq_printf(m, "%s\n", saved_command_line);
- #else
-	 seq_printf(m, "%s\n", patched_cmdline);
- #endif
-	 return 0;
+ 	seq_printf(m, "%s\n", saved_command_line);
+ 	return 0;
  }
 diff --git a/fs/proc/fd.c b/fs/proc/fd.c
 index 96fc702..4dc3ae8 100644
@@ -1167,7 +1156,7 @@ index 1347939..5c594b9 100644
 @@ -20,6 +20,9 @@
  #include <linux/uaccess.h>
  #include <linux/mm_inline.h>
- 
+ #include <linux/ctype.h>
 +#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +#include <linux/susfs_def.h>
 +#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
@@ -1226,18 +1215,34 @@ index 1347939..5c594b9 100644
  	}
  
  	start = vma->vm_start;
-@@ -883,6 +883,11 @@ static int show_smap(struct seq_file *m, void *v)
- {
- 	struct vm_area_struct *vma = v;
- 	struct mem_size_stats mss;
+@@ -831,6 +869,11 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
+ 		mss = &mss_stack;
+ 	}
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +	if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))
 +		return 0;
 +#endif
 +
- 	memset(&mss, 0, sizeof(mss));
-
+ 	smaps_walk.private = mss;
+ 
+ #ifdef CONFIG_SHMEM
+@@ -892,7 +935,6 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
+ 			   vma_kernel_pagesize(vma) >> 10,
+ 			   vma_mmu_pagesize(vma) >> 10);
+ 
+-
+ 	if (!rollup_mode || last_vma)
+ 		seq_printf(m,
+ 			   "Rss:            %8lu kB\n"
+@@ -932,6 +974,7 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
+ 		arch_show_smap(m, vma);
+ 		show_smap_vma_flags(m, vma);
+ 	}
++
+ 	m_cache_vma(m, vma);
+ 	return ret;
+ }
 @@ -1618,6 +1661,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	while (count && (start_vaddr < end_vaddr)) {
  		int len;
@@ -4216,22 +4221,8 @@ index 30801ea..0fd8fad 100644
  SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  {
  	struct new_utsname tmp;
-	const char *comm = current->comm;
-	int i;
-
-	static const struct {
-		const char *name;
-		size_t len;
-	} fake_comm[] = {
-		{ "bpfloader",    9  },
-		{ "netbpfload",   10 },
-		{ "netd",         4  },
-		{ "uprobestats",  11 },
-		{ "fsck.f2fs",    9  },
-		{ "pool-",		  5  },
-	};
-
-	down_read(&uts_sem);
+ 
+ 	down_read(&uts_sem);
  	memcpy(&tmp, utsname(), sizeof(tmp));
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +	if (static_branch_likely(&susfs_is_uname_spoof_buffer_set))
