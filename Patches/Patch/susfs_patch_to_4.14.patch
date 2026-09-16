@@ -405,17 +405,6 @@ index 80b743c..44e5219 100644
  	return error;
  }
  
- static struct file *path_openat(struct nameidata *nd,
- 			const struct open_flags *op, unsigned flags)
- {
-+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	int old_dfd = nd->dfd;
-+	struct filename *fake_filename = NULL;
-+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
- 	const char *s;
- 	struct file *file;
- 	int opened = 0;
-
 @@ -3675,6 +3675,11 @@ static struct file *path_openat(struct nameidata *nd,
  			const struct open_flags *op, unsigned flags)
  {
@@ -1168,7 +1157,7 @@ index 1347939..5c594b9 100644
 @@ -20,6 +20,9 @@
  #include <linux/uaccess.h>
  #include <linux/mm_inline.h>
- #include <linux/ctype.h>
+ 
 +#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 +#include <linux/susfs_def.h>
 +#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
@@ -1227,34 +1216,18 @@ index 1347939..5c594b9 100644
  	}
  
  	start = vma->vm_start;
-@@ -831,6 +869,11 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
- 		mss = &mss_stack;
- 	}
+@@ -883,6 +883,11 @@ static int show_smap(struct seq_file *m, void *v)
+ {
+ 	struct vm_area_struct *vma = v;
+ 	struct mem_size_stats mss;
  
 +#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 +	if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))
 +		return 0;
 +#endif
 +
- 	smaps_walk.private = mss;
- 
- #ifdef CONFIG_SHMEM
-@@ -892,7 +935,6 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
- 			   vma_kernel_pagesize(vma) >> 10,
- 			   vma_mmu_pagesize(vma) >> 10);
- 
--
- 	if (!rollup_mode || last_vma)
- 		seq_printf(m,
- 			   "Rss:            %8lu kB\n"
-@@ -932,6 +974,7 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
- 		arch_show_smap(m, vma);
- 		show_smap_vma_flags(m, vma);
- 	}
-+
- 	m_cache_vma(m, vma);
- 	return ret;
- }
+ 	memset(&mss, 0, sizeof(mss));
+
 @@ -1618,6 +1661,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
  	while (count && (start_vaddr < end_vaddr)) {
  		int len;
