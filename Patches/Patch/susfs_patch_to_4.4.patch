@@ -728,6 +728,24 @@ index fd98e5100cab..5be804e81d0c 100644
  		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
  			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
  			   mask, mark->ignored_mask);
+diff --git a/fs/open.c b/fs/open.c
+index b7e2889a710c..254a2e5d91fd 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -338,6 +338,13 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+ 	return error;
+ }
+ 
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_su_compat_enabled;
++extern bool __ksu_is_allow_uid_for_current(uid_t uid);
++extern int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
++			int *flags);
++#endif
++
+ /*
+  * access() needs to use the real uid/gid, not the effective uid/gid.
+  * We do this by temporarily clearing all FS-related capabilities and
 diff --git a/fs/proc/base.c b/fs/proc/base.c
 index e16afc80f810..15c59b8da3c3 100644
 --- a/fs/proc/base.c
