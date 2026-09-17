@@ -610,7 +610,7 @@ index 1c4273a4ef70..d49f6802633a 100644
 +}
 +#endif // #ifdef CONFIG_KSU_SUSFS
 diff --git a/fs/notify/fdinfo.c b/fs/notify/fdinfo.c
-index fd98e5100cab..5be804e81d0c 100644
+index fd98e5100cab..792101a94fae 100644
 --- a/fs/notify/fdinfo.c
 +++ b/fs/notify/fdinfo.c
 @@ -12,6 +12,9 @@
@@ -623,7 +623,7 @@ index fd98e5100cab..5be804e81d0c 100644
  
  #include "inotify/inotify.h"
  #include "../fs/mount.h"
-@@ -20,15 +23,31 @@
+@@ -20,15 +23,33 @@
  
  #if defined(CONFIG_INOTIFY_USER) || defined(CONFIG_FANOTIFY)
  
@@ -650,12 +650,14 @@ index fd98e5100cab..5be804e81d0c 100644
  	list_for_each_entry(mark, &group->marks_list, g_list) {
 +#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_SUS_KSTAT)
 +		show(m, mark, f);
++#else
++		show(m, mark, f);
 +#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_SUS_KSTAT)
 +#else
  		show(m, mark);
  		if (seq_has_overflowed(m))
  			break;
-@@ -71,7 +90,11 @@ static void show_mark_fhandle(struct seq_file *m, struct inode *inode)
+@@ -71,7 +92,11 @@ static void show_mark_fhandle(struct seq_file *m, struct inode *inode)
  
  #ifdef CONFIG_INOTIFY_USER
  
@@ -667,7 +669,7 @@ index fd98e5100cab..5be804e81d0c 100644
  {
  	struct inotify_inode_mark *inode_mark;
  	struct inode *inode;
-@@ -90,6 +113,60 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
+@@ -90,6 +115,60 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
  		 * used only internally to the kernel.
  		 */
  		u32 mask = mark->mask & IN_ALL_EVENTS;
