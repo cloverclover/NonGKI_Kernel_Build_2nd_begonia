@@ -3240,6 +3240,18 @@ index 000000000000..5839d7bf225b
 +
 +/* No module exit is needed becuase it should never be a loadable kernel module */
 +//void __init susfs_exit(void)
+diff --git a/include/linux/stat.h b/include/linux/stat.h
+index 075cb0c7eb2a..a10f92aa704d 100644
+--- a/include/linux/stat.h
++++ b/include/linux/stat.h
+@@ -19,6 +19,7 @@
+ #include <linux/uidgid.h>
+ 
+ struct kstat {
++	u32		result_mask;	/* What fields the user got */
+ 	u64		ino;
+ 	dev_t		dev;
+ 	umode_t		mode;
 diff --git a/include/linux/susfs.h b/include/linux/susfs.h
 new file mode 100644
 index 000000000000..76407ea0314e
