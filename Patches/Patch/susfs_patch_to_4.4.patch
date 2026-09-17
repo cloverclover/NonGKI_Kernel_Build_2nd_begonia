@@ -3310,10 +3310,10 @@ index 075cb0c7eb2a..a10f92aa704d 100644
  	umode_t		mode;
 diff --git a/include/linux/susfs.h b/include/linux/susfs.h
 new file mode 100644
-index 000000000000..76407ea0314e
+index 000000000000..d33e4ae2ee55
 --- /dev/null
 +++ b/include/linux/susfs.h
-@@ -0,0 +1,241 @@
+@@ -0,0 +1,243 @@
 +#ifndef KSU_SUSFS_H
 +#define KSU_SUSFS_H
 +
@@ -3555,6 +3555,9 @@ index 000000000000..76407ea0314e
 +
 +/* susfs_init */
 +void susfs_init(void);
++
++#endif
+\ No newline at end of file
 diff --git a/include/linux/susfs_def.h b/include/linux/susfs_def.h
 new file mode 100644
 index 000000000000..f2265c2b3443
