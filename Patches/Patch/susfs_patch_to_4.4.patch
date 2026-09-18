@@ -12,7 +12,7 @@ index d72d9ab931a4..759d9f31b3bc 100644
  obj-y +=	buffer.o block_dev.o direct-io.o mpage.o
  else
 diff --git a/fs/namei.c b/fs/namei.c
-index 7fd3cb953644..3add61cb79a3 100644
+index 7fd3cb953644..39f6ab5dcdf0 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -36,7 +36,10 @@
@@ -194,18 +194,52 @@ index 7fd3cb953644..3add61cb79a3 100644
  
  	if (nd->last_type != LAST_NORM) {
  		error = handle_dots(nd, nd->last_type);
-@@ -3511,6 +3588,10 @@ out:
+@@ -3454,11 +3531,32 @@ static int do_tmpfile(struct nameidata *nd, unsigned flags,
+ 		const struct open_flags *op,
+ 		struct file *file, int *opened)
+ {
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	int old_dfd = nd->dfd;
++	struct filename *fake_filename = NULL;
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+ 	static const struct qstr name = QSTR_INIT("/", 1);
+ 	struct dentry *child;
+ 	struct inode *dir;
+ 	struct path path;
+ 	int error = path_lookupat(nd, flags | LOOKUP_DIRECTORY, &path);
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	if ((likely(!error) && old_dfd != -1) &&
++		SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(path.dentry->d_inode))
++	{
++		fake_filename = susfs_open_redirect_spoof_do_sys_openat(path.dentry->d_inode);
++		if (fake_filename && !IS_ERR(fake_filename)) {
++			struct path fake_path;
++
++			/* filename_lookup() consumes fake_filename */
++			error = filename_lookup(old_dfd, fake_filename, flags, &fake_path, NULL);
++			path_put(&path);
++			if (unlikely(error))
++				return error;
++			path = fake_path;
++		}
++	}
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+ 	if (unlikely(error))
+ 		return error;
+ 	error = mnt_want_write(path.mnt);
+@@ -3511,6 +3609,11 @@ out:
  static struct file *path_openat(struct nameidata *nd,
  			const struct open_flags *op, unsigned flags)
  {
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 +	int old_dfd = nd->dfd;
 +	struct filename *fake_filename = NULL;
++	struct filename *old_name = nd->name;
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  	const char *s;
  	struct file *file;
  	int opened = 0;
-@@ -3541,12 +3622,43 @@ static struct file *path_openat(struct nameidata *nd,
+@@ -3541,12 +3644,55 @@ static struct file *path_openat(struct nameidata *nd,
  			break;
  		}
  	}
@@ -221,6 +255,16 @@ index 7fd3cb953644..3add61cb79a3 100644
 +				set_nameidata(nd, old_dfd, fake_filename);
 +				new_s = path_init(nd, flags);
 +				if (IS_ERR(new_s)) {
++					/*
++					 * path_init() drops any RCU lock it took
++					 * before failing, but leaves LOOKUP_RCU set
++					 * in nd->flags and nd->path stale, so
++					 * terminate_walk() here would unlock an
++					 * unheld lock / double-put the path. Only
++					 * undo what the hook itself changed.
++					 */
++					nd->name = old_name;
++					putname(fake_filename);
 +					put_filp(file);
 +					return ERR_CAST(new_s);
 +				}
@@ -243,13 +287,15 @@ index 7fd3cb953644..3add61cb79a3 100644
  		put_filp(file);
  	}
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+	if (fake_filename && !IS_ERR(fake_filename))
++	if (fake_filename && !IS_ERR(fake_filename)) {
++		nd->name = old_name;
 +		putname(fake_filename);
++	}
 +#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
  	if (unlikely(error)) {
  		if (error == -EOPENSTALE) {
  			if (flags & LOOKUP_RCU)
-@@ -4764,6 +4876,10 @@ out:
+@@ -4764,6 +4910,10 @@ out:
  }
  EXPORT_SYMBOL(readlink_copy);
  
@@ -260,7 +306,7 @@ index 7fd3cb953644..3add61cb79a3 100644
  /*
   * A helper for ->readlink().  This should be used *ONLY* for symlinks that
   * have ->follow_link() touching nd only in nd_set_link().  Using (or not
-@@ -4781,6 +4897,16 @@ int generic_readlink(struct dentry *dentry, char __user *buffer, int buflen)
+@@ -4781,6 +4931,16 @@ int generic_readlink(struct dentry *dentry, char __user *buffer, int buflen)
  		if (IS_ERR(link))
  			return PTR_ERR(link);
  	}
@@ -278,7 +324,7 @@ index 7fd3cb953644..3add61cb79a3 100644
  	if (inode->i_op->put_link)
  		inode->i_op->put_link(inode, cookie);
 diff --git a/fs/namespace.c b/fs/namespace.c
-index 1c4273a4ef70..d49f6802633a 100644
+index 1c4273a4ef70..9258f0a7abc2 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -24,9 +24,20 @@
@@ -574,7 +620,7 @@ index 1c4273a4ef70..d49f6802633a 100644
  	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
  	if (IS_ERR(new)) {
  		namespace_unlock();
-@@ -3549,3 +3768,34 @@ const struct proc_ns_operations mntns_operations = {
+@@ -3549,3 +3768,43 @@ const struct proc_ns_operations mntns_operations = {
  	.install	= mntns_install,
  	.owner		= mntns_owner,
  };
@@ -584,6 +630,9 @@ index 1c4273a4ef70..d49f6802633a 100644
 +int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt) {
 +	struct mount *mnt = orig_mnt;
 +	int mnt_id;
++
++	if (mnt->mnt_id < DEFAULT_KSU_MNT_ID)
++		return mnt->mnt_id;
 +
 +	lock_mount_hash();
 +	for (; mnt && mnt->mnt_parent && mnt != mnt->mnt_parent && mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }
@@ -595,6 +644,12 @@ index 1c4273a4ef70..d49f6802633a 100644
 +/* - To retrieve the non sus vfsmount from vfsmount, takes a reference on &mnt->mnt and mnt->mnt.mnt_root */
 +struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vfsmnt) {
 +	struct mount *mnt = real_mount(vfsmnt);
++
++	if (mnt->mnt_id < DEFAULT_KSU_MNT_ID) {
++		mntget(&mnt->mnt);
++		dget(mnt->mnt.mnt_root);
++		return &mnt->mnt;
++	}
 +
 +	lock_mount_hash();
 +	for (; mnt && mnt->mnt_parent && mnt != mnt->mnt_parent && mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }
@@ -1733,10 +1788,10 @@ index 55cd8843b49a..c273ba681fe0 100644
  		return -ENOMEM;
 diff --git a/fs/susfs.c b/fs/susfs.c
 new file mode 100644
-index 000000000000..5839d7bf225b
+index 000000000000..754cd5f4cdfb
 --- /dev/null
 +++ b/fs/susfs.c
-@@ -0,0 +1,1560 @@
+@@ -0,0 +1,1567 @@
 +#include <linux/version.h>
 +#include <linux/cred.h>
 +#include <linux/fs.h>
@@ -2258,6 +2313,7 @@ index 000000000000..5839d7bf225b
 +		}
 +	}
 +	mutex_unlock(&susfs_mutex_lock_sus_kstat);
++	kfree(new_entry);
 +	info.err = -ENOENT;
 +
 +out_copy_to_user:
@@ -2602,11 +2658,17 @@ index 000000000000..5839d7bf225b
 +
 +void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
 +	unsigned seq;
++	char *buf = (char *)kmalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
 +
++	if (!buf) {
++		return;
++	}
 +	do {
 +		seq = read_seqbegin(&susfs_fake_cmdline_or_bootconfig_seqlock);
-+		seq_puts(m, fake_cmdline_or_bootconfig);
++		strscpy(buf, fake_cmdline_or_bootconfig, SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE);
 +	} while (read_seqretry(&susfs_fake_cmdline_or_bootconfig_seqlock, seq));
++	seq_puts(m, buf);
++	kfree(buf);
 +}
 +#endif
 +
